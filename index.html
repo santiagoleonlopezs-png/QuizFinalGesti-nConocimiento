@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Knowledge Challenge | GC</title>
+<style>
+:root{--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#667085;--line:#e4e7ec;--accent:#3157d5;--ok:#16803c;--bad:#c93636}
+*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:1050px;margin:auto;padding:24px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin:14px 0}
+h1,h2,h3,p{margin-top:0}.muted{color:var(--muted)}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.between{justify-content:space-between}
+button,input{font:inherit}button{border:0;border-radius:12px;padding:12px 17px;font-weight:750;cursor:pointer;background:var(--accent);color:#fff;min-height:44px}
+button.secondary{background:#eef1f7;color:var(--ink)}button.danger{background:var(--bad)}button:disabled{opacity:.5;cursor:not-allowed}
+input{width:100%;padding:13px;border:1px solid var(--line);border-radius:11px;font-size:16px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hidden{display:none!important}.answer{background:#f7f8fb;color:var(--ink);border:1px solid var(--line);text-align:left;min-height:72px}.answer:hover{border-color:var(--accent)}
+.pill{padding:7px 11px;border:1px solid var(--line);border-radius:999px;font-size:13px}.big{font-size:36px;font-weight:850}.question{font-size:24px;font-weight:800;line-height:1.3}
+.bar{height:14px;background:#edf0f5;border-radius:99px;overflow:hidden}.bar>div{height:100%;background:var(--accent);transition:width .25s}
+.optbar{display:grid;grid-template-columns:34px 1fr 76px;gap:10px;align-items:center;margin:11px 0}.optbar .track{height:26px;background:#edf0f5;border-radius:8px;overflow:hidden}.optbar .fill{height:100%;background:#6577b8}
+.rankrow{display:grid;grid-template-columns:45px 1fr auto;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line)}.correct{border:2px solid var(--ok)!important}.wrong{border:2px solid var(--bad)!important}
+@media(max-width:650px){.grid2{grid-template-columns:1fr}.question{font-size:20px}.wrap{padding:14px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<section id="home" class="card">
+<h1>Knowledge Challenge</h1><p class="muted">Gestión del Conocimiento · 20 preguntas · 60 segundos · 1–10 puntos por velocidad</p>
+<div class="grid2"><button id="goPlayer">Participar</button><button id="goHost" class="secondary">Facilitador</button></div>
+</section>
+
+<section id="playerJoin" class="card hidden">
+<h2>Ingresar al juego</h2><label>Nombre</label><input id="playerName" maxlength="30" placeholder="Tu nombre">
+<label style="display:block;margin-top:12px">Código de sala</label><input id="roomCode" maxlength="12" placeholder="GC2026">
+<div class="row" style="margin-top:14px"><button id="joinBtn">Entrar</button><button class="secondary back">Volver</button></div>
+<p id="joinMsg" class="muted" style="margin-top:12px"></p>
+</section>
+
+<section id="hostLogin" class="card hidden">
+<h2>Facilitador</h2><label>Clave</label><input id="hostPass" type="password" placeholder="Clave de facilitador">
+<div class="row" style="margin-top:14px"><button id="hostBtn">Entrar al panel</button><button class="secondary back">Volver</button></div>
+<p id="hostMsg" class="muted" style="margin-top:12px"></p>
+</section>
+
+<section id="waiting" class="card hidden">
+<h2 id="welcome">¡Listo!</h2><p id="waitText">Espera a que el facilitador abra la pregunta.</p>
+<div class="big" id="waitScore">0 pts</div>
+</section>
+
+<section id="playerGame" class="hidden">
+<div class="row between"><span id="pNum" class="pill"></span><span id="pTimer" class="big">60</span></div>
+<div class="bar"><div id="pTimeBar" style="width:100%"></div></div>
+<div class="card"><div id="pQuestion" class="question"></div><div id="pAnswers" class="grid2" style="margin-top:18px"></div><p id="pMsg" style="margin-top:15px"></p></div>
+</section>
+
+<section id="hostPanel" class="hidden">
+<div class="card">
+<div class="row between"><div><h2 style="margin-bottom:4px">Panel del facilitador</h2><span class="muted">Sala <b id="hostRoom">GC2026</b> · Estado: <b id="phaseLabel">En espera</b></span></div><div><span class="pill">Conectados: <b id="connected">0</b></span> <span class="pill">Respondieron: <b id="answered">0</b></span></div></div>
+<div class="row" style="margin-top:16px"><button id="openQ">Abrir pregunta</button><button id="closeQ" class="secondary">Cerrar respuestas</button><button id="revealQ" class="secondary">Mostrar resultados</button><button id="nextQ">Siguiente pregunta</button></div>
+<div class="row" style="margin-top:10px"><button id="resetGame" class="danger">Reiniciar partida</button><button id="clearPlayers" class="secondary">Eliminar participantes</button></div>
+</div>
+<div class="card"><div class="row between"><span id="hNum" class="pill">Pregunta 1 / 20</span><span id="hTimer" class="big">60</span></div><h3 id="hQuestion" class="question" style="margin-top:18px"></h3><div id="hOptions"></div></div>
+<div class="grid2">
+<div class="card"><h3>Respuestas en vivo</h3><div id="distribution"></div></div>
+<div class="card"><h3>🏆 Ranking</h3><div id="ranking"></div></div>
+</div>
+</section>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, onSnapshot, serverTimestamp, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBnHTbmdSPWjYKTiLjv7HPKkqzpD4SOmJY",
+  authDomain: "simuladores-juegos.firebaseapp.com",
+  projectId: "simuladores-juegos",
+  storageBucket: "simuladores-juegos.appspot.com"
+};
+const app=initializeApp(firebaseConfig), db=getFirestore(app);
+const ROOT="gc_quiz_live", DEFAULT_ROOM="GC2026", HOST_PASSWORD="GC2026";
+const Q=[
+["Seguridad psicológica","Un equipo realiza sesiones de lecciones aprendidas después de cada proyecto. Sin embargo, los integrantes comparten principalmente los logros y evitan hablar de errores. ¿Qué condición parece estar limitando más la gestión del conocimiento?",["La capacidad para almacenar conocimiento explícito.","La seguridad psicológica para compartir conocimiento relevante.","La metodología utilizada para documentar aprendizajes.","La frecuencia con la que se realizan las sesiones."],1],
+["Bitácoras de aprendizaje","Un estudiante registra después de cada clase qué aprendió, qué cambió frente a lo que pensaba y cómo podría utilizarlo en su trabajo. ¿Qué función cumple principalmente esta práctica?",["Convertir la experiencia en aprendizaje consciente.","Organizar cronológicamente los contenidos estudiados.","Construir un repositorio personal de información.","Evidenciar el cumplimiento de las actividades académicas."],0],
+["Mapa de conocimiento personal","Una profesional identifica que domina análisis de datos, posee conocimientos básicos de IA y suele recurrir a dos compañeros cuando enfrenta problemas de automatización. ¿Qué aporta un mapa de conocimiento personal?",["Establecer los conocimientos exigidos por su cargo.","Determinar cuáles conocimientos debe certificar.","Representar lo que sabe y las fuentes a las que puede recurrir.","Comparar sus conocimientos con los de otros profesionales."],2],
+["Mercado del conocimiento","En una organización, un analista necesita resolver un problema que nunca ha enfrentado. Sabe que alguien de otra área ya resolvió algo similar, pero desconoce quién. Desde la perspectiva del mercado del conocimiento, el principal problema es:",["La ausencia de conocimiento explícito.","La falta de incentivos económicos para compartir.","La baja capacidad de almacenamiento organizacional.","La dificultad para conectar demanda y oferta de conocimiento."],3],
+["Etología y gestión del conocimiento","Una colonia de hormigas encuentra una nueva fuente de alimento y progresivamente otras hormigas comienzan a utilizar una ruta eficiente para llegar a ella. Desde gestión del conocimiento, este comportamiento evidencia principalmente:",["Distribución y circulación de conocimiento colectivo.","Especialización funcional de los individuos.","Conversión de conocimiento tácito en explícito.","Centralización de información crítica."],0],
+["Criticidad del conocimiento","Una colonia humana en Marte debe decidir qué conocimientos proteger primero ante una reducción crítica de su capacidad de almacenamiento. ¿Cuál criterio sería más adecuado?",["La cantidad de personas que utilizan cada conocimiento.","Su impacto, dificultad de recuperación y riesgo de pérdida.","La antigüedad y frecuencia de actualización del conocimiento.","El volumen de información disponible sobre cada tema."],1],
+["Pirámide del conocimiento","Un tablero muestra que las reclamaciones aumentaron 18 % durante tres meses. El equipo analiza los casos y descubre que el incremento se concentra en clientes que utilizan un nuevo canal. ¿Dónde ocurre principalmente el paso de información a conocimiento?",["Al registrar cada reclamación recibida.","Al calcular el incremento porcentual.","Al identificar la relación con el nuevo canal.","Al presentar los resultados en un tablero."],2],
+["Criticidad y categorización","Una empresa identifica cuatro conocimientos. ¿Cuál debería recibir mayor prioridad desde la perspectiva del riesgo de conocimiento?",["Uno frecuente, dominado por numerosos colaboradores.","Uno estratégico, documentado y compartido entre especialistas.","Uno especializado, disponible también mediante proveedores externos.","Uno crítico para operar, poco documentado y dominado por una persona."],3],
+["Estrategia del conocimiento","Una empresa identifica que su estrategia futura dependerá fuertemente de analítica avanzada, pero actualmente posee muy pocas capacidades internas en ese campo. ¿Cuál debería ser su primera decisión de gestión del conocimiento?",["Definir la brecha entre el conocimiento requerido y el disponible.","Construir un repositorio especializado en analítica.","Crear comunidades de práctica entre todas las áreas.","Contratar una plataforma para almacenar conocimiento."],0],
+["Flujos y redes de conocimiento","En un mapa de conocimiento se descubre que Laura es consultada constantemente por personas de cinco áreas, aunque no ocupa una posición de liderazgo formal. ¿Cuál interpretación está mejor sustentada?",["Laura posee el conocimiento de mayor criticidad de la empresa.","Laura presenta una elevada centralidad en la red de conocimiento.","La organización debería formalizar a Laura como líder del proceso.","Existe necesariamente una dependencia organizacional de Laura."],1],
+["GC en gestión del cambio","Una empresa implementará un nuevo modelo comercial. Los colaboradores comprenden por qué es necesario y manifiestan disposición para adoptarlo, pero todavía no saben ejecutar los nuevos procesos. ¿Dónde debería concentrarse la gestión del conocimiento?",["En fortalecer la narrativa estratégica del cambio.","En aumentar los espacios de participación.","En desarrollar y transferir el conocimiento requerido.","En sistematizar las lecciones aprendidas del proceso."],2],
+["Ciencias del comportamiento","Una organización creó una plataforma para compartir buenas prácticas. Los colaboradores reconocen su utilidad y saben utilizarla, pero casi nunca publican porque el proceso exige demasiados pasos. ¿Cuál intervención sería más coherente desde ciencias del comportamiento?",["Crear una campaña sobre los beneficios de compartir.","Capacitar nuevamente sobre el uso de la plataforma.","Incorporar reconocimientos para quienes publiquen más.","Reducir la fricción del proceso de publicación."],3],
+["Lecciones aprendidas","Un proyecto termina con resultados inferiores a los esperados. ¿Cuál pregunta produciría una lección aprendida más útil para proyectos futuros?",["¿Qué ocurrió, por qué ocurrió y qué haríamos diferente?","¿Quién tomó las decisiones que generaron el resultado?","¿Cuáles actividades del cronograma no se cumplieron?","¿Qué integrantes tuvieron mejor desempeño?"],0],
+["Transferencia de conocimiento tácito","Un experto se retirará en seis meses. Existen manuales detallados de sus procesos, pero buena parte de su experiencia consiste en reconocer excepciones y decidir frente a situaciones poco frecuentes. ¿Qué estrategia sería más adecuada?",["Actualizar los procedimientos existentes.","Implementar acompañamiento experto-aprendiz en situaciones reales.","Realizar entrevistas para ampliar los documentos disponibles.","Construir una biblioteca con casos históricos del proceso."],1],
+["Gestión del conocimiento con IA / RAG","Una organización quiere crear un agente que responda preguntas sobre procedimientos internos y fundamente sus respuestas en documentos institucionales actualizados. ¿Qué alternativa responde mejor a esa necesidad?",["Entrenar un modelo únicamente con información histórica.","Crear una biblioteca digital con búsqueda semántica.","Implementar RAG conectado a las fuentes internas pertinentes.","Diseñar prompts especializados para cada procedimiento."],2],
+["Open Space","Una organización reúne a 60 personas de diferentes áreas para explorar problemas emergentes sobre los cuales todavía no existe una agenda clara. ¿Por qué Open Space podría ser apropiado?",["Permite organizar previamente los temas según su prioridad estratégica.","Facilita que expertos asignados lideren cada conversación.","Permite desarrollar simultáneamente un plan formal de capacitación.","Hace posible que los participantes movilicen conversaciones relevantes."],3],
+["Consultoría / ADDIE","Un consultor recibe la solicitud: “Necesitamos una capacitación para que nuestros equipos compartan más conocimiento”. Antes de diseñarla, ¿qué debería hacer siguiendo la lógica de ADDIE?",["Analizar la necesidad y determinar qué explica la brecha actual.","Diseñar las actividades que generen mayor participación.","Desarrollar contenidos sobre transferencia de conocimiento.","Definir indicadores para evaluar la capacitación."],0],
+["Indicadores de gestión del conocimiento","Una plataforma registra 3.000 documentos, 800 usuarios activos y 12.000 consultas. ¿Qué información adicional permitiría evaluar mejor si está generando valor?",["El crecimiento mensual de documentos almacenados.","La relación entre el conocimiento utilizado y mejoras en el desempeño.","El promedio de consultas realizadas por cada usuario.","El porcentaje de colaboradores registrados en la plataforma."],1],
+["GC transfuncional","Dos áreas dependen entre sí para atender al cliente. Ambas tienen buena documentación interna, pero los errores aparecen principalmente cuando un caso pasa de una a otra. ¿Dónde debería concentrarse inicialmente la intervención?",["En aumentar la documentación de cada área.","En identificar nuevos conocimientos críticos.","En fortalecer la transferencia de conocimiento en las interfaces.","En crear repositorios independientes para cada proceso."],2],
+["Ecosistemas inteligentes","Una organización integra expertos, comunidades de práctica, repositorios, agentes de IA, mecanismos de captura y analítica sobre el uso del conocimiento. ¿Qué característica permitiría hablar con mayor propiedad de un ecosistema inteligente de conocimiento?",["Que todos los componentes utilicen una plataforma común.","Que la mayor parte del conocimiento esté digitalizado.","Que la IA participe en los procesos de búsqueda y creación.","Que personas, procesos y tecnología se conecten para aprender y actuar."],3]
+];
+const $=id=>document.getElementById(id), screens=["home","playerJoin","hostLogin","waiting","playerGame","hostPanel"];
+function show(id){screens.forEach(x=>$(x).classList.toggle("hidden",x!==id))}
+document.querySelectorAll(".back").forEach(b=>b.onclick=()=>show("home"));
+$("goPlayer").onclick=()=>show("playerJoin"); $("goHost").onclick=()=>show("hostLogin");
+let room=DEFAULT_ROOM, playerId="", playerName="", hostUnsubs=[], playerUnsub=null, tick=null, state=null, players=[];
+const roomRef=()=>doc(db,ROOT,room); const playersRef=()=>collection(db,ROOT,room,"players"); const pRef=id=>doc(db,ROOT,room,"players",id);
+function safeId(s){return (s.toLowerCase().replace(/[^a-z0-9áéíóúñ]+/gi,"-").replace(/^-|-$/g,"").slice(0,40)||"jugador")+"-"+Math.random().toString(36).slice(2,7)}
+async function ensureRoom(){const r=await getDoc(roomRef());if(!r.exists())await setDoc(roomRef(),{questionIndex:0,status:"lobby",openedAt:0,duration:60,updatedAt:serverTimestamp()})}
+$("joinBtn").onclick=async()=>{playerName=$("playerName").value.trim();room=$("roomCode").value.trim().toUpperCase()||DEFAULT_ROOM;if(!playerName)return $("joinMsg").textContent="Escribe tu nombre.";try{await ensureRoom();playerId=safeId(playerName);await setDoc(pRef(playerId),{name:playerName,score:0,answers:{},joinedAt:serverTimestamp()});$("welcome").textContent="¡Listo, "+playerName+"!";show("waiting");listenPlayer()}catch(e){$("joinMsg").textContent="No fue posible entrar. Revisa las reglas de Firestore."}}
+$("hostBtn").onclick=async()=>{if($("hostPass").value!==HOST_PASSWORD)return $("hostMsg").textContent="Clave incorrecta.";room=DEFAULT_ROOM;await ensureRoom();$("hostRoom").textContent=room;show("hostPanel");listenHost()}
+function points(elapsed){return Math.max(1,10-Math.floor(Math.min(59.999,elapsed)/6))}
+function listenPlayer(){if(playerUnsub)playerUnsub();playerUnsub=onSnapshot(roomRef(),snap=>{if(!snap.exists())return;state=snap.data();if(state.status==="open")renderPlayer();else{show("waiting");$("waitText").textContent=state.status==="revealed"?"Respuesta revelada. Espera la siguiente pregunta.":"Espera a que el facilitador abra la pregunta.";getDoc(pRef(playerId)).then(x=>{if(x.exists())$("waitScore").textContent=(x.data().score||0)+" pts"})}})}
+function renderPlayer(){let i=state.questionIndex,q=Q[i];show("playerGame");$("pNum").textContent=`Pregunta ${i+1} / ${Q.length}`;$("pQuestion").textContent=q[1];$("pAnswers").innerHTML="";q[2].forEach((a,k)=>{let b=document.createElement("button");b.className="answer";b.textContent=String.fromCharCode(65+k)+". "+a;b.onclick=()=>submitAnswer(k,b);$("pAnswers").appendChild(b)});runPlayerTimer()}
+function runPlayerTimer(){clearInterval(tick);const update=()=>{let remain=Math.max(0,60-(Date.now()-(state.openedAt||Date.now()))/1000);$("pTimer").textContent=Math.ceil(remain);$("pTimeBar").style.width=(remain/60*100)+"%";if(remain<=0){clearInterval(tick);$("pAnswers").querySelectorAll("button").forEach(b=>b.disabled=true);$("pMsg").textContent="Tiempo agotado."}};update();tick=setInterval(update,250)}
+async function submitAnswer(k,b){$("pAnswers").querySelectorAll("button").forEach(x=>x.disabled=true);let elapsed=Math.max(0,(Date.now()-state.openedAt)/1000),q=Q[state.questionIndex],earned=k===q[3]?points(elapsed):0;let ps=await getDoc(pRef(playerId)),d=ps.data(),ans=d.answers||{};if(ans[state.questionIndex]!=null)return;ans[state.questionIndex]={option:k,elapsed:+elapsed.toFixed(2),points:earned};await updateDoc(pRef(playerId),{answers:ans,score:(d.score||0)+earned});$("pMsg").textContent="Respuesta registrada. Espera a que el facilitador continúe."}
+function listenHost(){hostUnsubs.forEach(u=>u());hostUnsubs=[onSnapshot(roomRef(),s=>{if(s.exists()){state=s.data();renderHost()}}),onSnapshot(playersRef(),s=>{players=s.docs.map(d=>({id:d.id,...d.data()}));renderHost()})]}
+function renderHost(){if(!state)return;let i=Math.min(state.questionIndex,Q.length-1),q=Q[i];$("connected").textContent=players.length;$("answered").textContent=players.filter(p=>p.answers&&p.answers[i]!=null).length;$("hNum").textContent=`Pregunta ${i+1} / ${Q.length}`;$("hQuestion").textContent=q[1];$("hOptions").innerHTML=q[2].map((x,k)=>`<div class="${state.status==="revealed"&&k===q[3]?"correct":""}" style="padding:8px;border-radius:8px">${String.fromCharCode(65+k)}. ${x}</div>`).join("");const labels={lobby:"En espera",open:"Pregunta abierta",closed:"Respuestas cerradas",revealed:"Respuesta revelada"};$("phaseLabel").textContent=labels[state.status]||state.status;$("openQ").disabled=state.status==="open";$("closeQ").disabled=state.status!=="open";$("revealQ").disabled=state.status==="open"||state.status==="lobby";$("nextQ").disabled=state.status!=="revealed"||i>=Q.length-1;renderDist(i);renderRank();runHostTimer()}
+function renderDist(i){
+  if(state.status!=="revealed"){
+    $("distribution").innerHTML='<p class="muted">Los resultados se revelarán al finalizar la pregunta.</p>';
+    return;
+  }
+  let counts=[0,0,0,0];
+  players.forEach(p=>{let a=p.answers&&p.answers[i];if(a)counts[a.option]++});
+  let total=counts.reduce((a,b)=>a+b,0);
+  $("distribution").innerHTML=counts.map((n,k)=>`<div class="optbar"><b>${String.fromCharCode(65+k)}</b><div class="track"><div class="fill" style="width:${total?n/total*100:0}%"></div></div><span>${n} · ${total?Math.round(n/total*100):0}%</span></div>`).join("");
+}
+function renderRank(){
+  if(state.status!=="revealed"){
+    $("ranking").innerHTML='<p class="muted">El ranking se mostrará cuando reveles los resultados.</p>';
+    return;
+  }
+  let a=[...players].sort((x,y)=>(y.score||0)-(x.score||0));
+  const isFinal=(state.questionIndex||0)===Q.length-1;
+  const visible=isFinal?a:a.slice(0,10);
+  $("ranking").innerHTML=visible.length
+    ? visible.map((p,i)=>`<div class="rankrow"><b>${i===0?"🥇":i===1?"🥈":i===2?"🥉":"#"+(i+1)}</b><span>${escapeHtml(p.name)}</span><b>${p.score||0} pts</b></div>`).join("")
+      + (!isFinal && a.length>10 ? `<p class="muted" style="margin-top:12px">Mostrando Top 10 de ${a.length} participantes.</p>` : "")
+    : '<p class="muted">Aún no hay participantes.</p>';
+}
+function runHostTimer(){clearInterval(tick);if(state.status!=="open"){$("hTimer").textContent=state.status==="lobby"?"60":"—";return}const f=()=>{let r=Math.max(0,60-(Date.now()-state.openedAt)/1000);$("hTimer").textContent=Math.ceil(r);if(r<=0)clearInterval(tick)};f();tick=setInterval(f,250)}
+$("openQ").onclick=()=>updateDoc(roomRef(),{status:"open",openedAt:Date.now(),updatedAt:serverTimestamp()});
+$("closeQ").onclick=()=>updateDoc(roomRef(),{status:"closed",updatedAt:serverTimestamp()});
+$("revealQ").onclick=()=>updateDoc(roomRef(),{status:"revealed",updatedAt:serverTimestamp()});
+$("nextQ").onclick=()=>{let n=Math.min((state?.questionIndex||0)+1,Q.length-1);updateDoc(roomRef(),{questionIndex:n,status:"lobby",openedAt:0,updatedAt:serverTimestamp()})};
+$("resetGame").onclick=async()=>{if(!confirm("¿Reiniciar toda la partida y puntajes?"))return;let batch=writeBatch(db);(await getDocs(playersRef())).forEach(d=>batch.update(d.ref,{score:0,answers:{}}));batch.set(roomRef(),{questionIndex:0,status:"lobby",openedAt:0,duration:60,updatedAt:serverTimestamp()});await batch.commit()};
+$("clearPlayers").onclick=async()=>{if(!confirm("¿Eliminar todos los participantes?"))return;let batch=writeBatch(db);(await getDocs(playersRef())).forEach(d=>batch.delete(d.ref));await batch.commit()};
+function escapeHtml(s){let d=document.createElement("div");d.textContent=s||"";return d.innerHTML}
+</script>
+</body></html>
