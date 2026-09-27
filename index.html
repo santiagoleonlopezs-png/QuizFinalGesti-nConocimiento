@@ -308,9 +308,9 @@ async function loadBanks(){
   await seedDefaultBank();
   const s=await getDocs(collection(db,BANKS));
   banks=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.name).localeCompare(String(b.name),"es"));
-  $("#bankSelect").innerHTML=banks.map(b=>`<option value="${escapeHtml(b.id)}">${escapeHtml(b.name||b.id)}</option>`).join("");
+  $("bankSelect").innerHTML=banks.map(b=>`<option value="${escapeHtml(b.id)}">${escapeHtml(b.name||b.id)}</option>`).join("");
   if(!banks.some(b=>b.id===currentBankId)) currentBankId=banks[0]?.id||"agilismo";
-  $("#bankSelect").value=currentBankId;
+  $("bankSelect").value=currentBankId;
   await selectBank(currentBankId,false);
 }
 async function selectBank(id,syncRoom=true){
@@ -318,12 +318,12 @@ async function selectBank(id,syncRoom=true){
   currentBankId=id; const d=s.data();
   if(Array.isArray(d.questions)) Q=questionsFromFirestore(d.questions);
   renderQuestionAdmin();
-  $("#bulkQuestions").value=Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].join("\t")).join("\n");
+  $("bulkQuestions").value=Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].join("\t")).join("\n");
   if(syncRoom) await setDoc(roomRef(),{questions:questionsToFirestore(Q),bankId:id,questionIndex:0,status:"lobby",openedAt:0,updatedAt:serverTimestamp()},{merge:true});
   renderHost();
 }
 function renderQuestionAdmin(){
-  const box=$("#questionList"); if(!box)return;
+  const box=$("questionList"); if(!box)return;
   box.innerHTML=Q.map((q,i)=>`<div class="qrow"><div class="qrowhead"><div><b>${i+1}. ${escapeHtml(q[1])}</b><div class="mini">Correcta: ${String.fromCharCode(65+q[3])} · ${escapeHtml(q[2][q[3]])}</div></div><div class="qactions"><button class="secondary" onclick="window.editQ(${i})">✏️ Editar</button><button class="secondary" onclick="window.dupQ(${i})">📋 Duplicar</button><button class="secondary" onclick="window.moveQ(${i},-1)">↑</button><button class="secondary" onclick="window.moveQ(${i},1)">↓</button><button class="danger" onclick="window.delQ(${i})">🗑️</button></div></div></div>`).join("");
 }
 async function persistBank(){
@@ -345,53 +345,53 @@ async function persistBank(){
   renderQuestionAdmin();
   renderHost();
 }
-window.editQ=i=>{editingIndex=i;const q=Q[i];$("#singleEditorTitle").textContent=`Editar pregunta ${i+1}`;$("#editQuestion").value=q[1];["A","B","C","D"].forEach((x,k)=>$("#edit"+x).value=q[2][k]);$("#editCorrect").value=q[3];$("#singleEditor").classList.remove("hidden");$("#singleEditor").scrollIntoView({behavior:"smooth",block:"center"});}
+window.editQ=i=>{editingIndex=i;const q=Q[i];$("singleEditorTitle").textContent=`Editar pregunta ${i+1}`;$("editQuestion").value=q[1];["A","B","C","D"].forEach((x,k)=>$("#edit"+x).value=q[2][k]);$("editCorrect").value=q[3];$("singleEditor").classList.remove("hidden");$("singleEditor").scrollIntoView({behavior:"smooth",block:"center"});}
 window.dupQ=async i=>{Q.splice(i+1,0,JSON.parse(JSON.stringify(Q[i])));await persistBank();}
 window.delQ=async i=>{if(Q.length<=1)return alert("El banco debe conservar al menos una pregunta.");if(confirm("¿Eliminar esta pregunta?")){Q.splice(i,1);await persistBank();}}
 window.moveQ=async(i,d)=>{const j=i+d;if(j<0||j>=Q.length)return;[Q[i],Q[j]]=[Q[j],Q[i]];await persistBank();}
-$("#addQuestion").onclick=()=>{editingIndex=null;$("#singleEditorTitle").textContent="Nueva pregunta";$("#editQuestion").value="";["A","B","C","D"].forEach(x=>$("#edit"+x).value="");$("#editCorrect").value="0";$("#singleEditor").classList.remove("hidden");};
-$("#cancelSingle").onclick=()=>$("#singleEditor").classList.add("hidden");
-$("#saveSingle").onclick=async()=>{
+$("addQuestion").onclick=()=>{editingIndex=null;$("singleEditorTitle").textContent="Nueva pregunta";$("editQuestion").value="";["A","B","C","D"].forEach(x=>$("#edit"+x).value="");$("editCorrect").value="0";$("singleEditor").classList.remove("hidden");};
+$("cancelSingle").onclick=()=>$("singleEditor").classList.add("hidden");
+$("saveSingle").onclick=async()=>{
   try{
-    const text=$("#editQuestion").value.trim(),opts=["A","B","C","D"].map(x=>$("#edit"+x).value.trim()),correct=Number($("#editCorrect").value);
+    const text=$("editQuestion").value.trim(),opts=["A","B","C","D"].map(x=>$("#edit"+x).value.trim()),correct=Number($("editCorrect").value);
     if(!text||opts.some(x=>!x))return alert("Completa la pregunta y las cuatro opciones.");
     const q=["Pregunta",text,opts,correct];
     if(editingIndex===null)Q.push(q);else Q[editingIndex]=q;
-    $("#singleEditor").classList.add("hidden");
+    $("singleEditor").classList.add("hidden");
     await persistBank();
-    $("#editorMsg").textContent="✓ Pregunta guardada.";
-  }catch(e){console.error(e);$("#editorMsg").textContent="Error al guardar: "+(e?.message||e);}
+    $("editorMsg").textContent="✓ Pregunta guardada.";
+  }catch(e){console.error(e);$("editorMsg").textContent="Error al guardar: "+(e?.message||e);}
 };
-$("#bankSelect").onchange=e=>selectBank(e.target.value,true);
-$("#newBank").onclick=async()=>{
+$("bankSelect").onchange=e=>selectBank(e.target.value,true);
+$("newBank").onclick=async()=>{
   try{
     const name=prompt("Nombre del nuevo banco:"); if(!name?.trim())return;
     const id=name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")+"-"+Date.now().toString().slice(-5);
     await setDoc(bankRef(id),{name:name.trim(),questions:[],createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
     banks.push({id,name:name.trim(),questions:[]}); currentBankId=id; Q=[];
-    $("#bankSelect").innerHTML=banks.map(b=>`<option value="${escapeHtml(b.id)}">${escapeHtml(b.name||b.id)}</option>`).join("");
-    $("#bankSelect").value=id; $("#bulkQuestions").value=""; renderQuestionAdmin();
+    $("bankSelect").innerHTML=banks.map(b=>`<option value="${escapeHtml(b.id)}">${escapeHtml(b.name||b.id)}</option>`).join("");
+    $("bankSelect").value=id; $("bulkQuestions").value=""; renderQuestionAdmin();
     await setDoc(roomRef(),{questions:[],bankId:id,questionIndex:0,status:"lobby",openedAt:0,updatedAt:serverTimestamp()},{merge:true});
     renderHost();
-    $("#editorMsg").textContent="Banco creado. Agrega preguntas o pégalas en Importación masiva.";
-  }catch(e){console.error(e);$("#editorMsg").textContent="Error al crear banco: "+(e?.message||e);}
+    $("editorMsg").textContent="Banco creado. Agrega preguntas o pégalas en Importación masiva.";
+  }catch(e){console.error(e);$("editorMsg").textContent="Error al crear banco: "+(e?.message||e);}
 };
-$("#renameBank").onclick=async()=>{const b=banks.find(x=>x.id===currentBankId);const name=prompt("Nuevo nombre:",b?.name||currentBankId);if(!name?.trim())return;await setDoc(bankRef(currentBankId),{name:name.trim(),updatedAt:serverTimestamp()},{merge:true});if(b)b.name=name.trim();$("#bankSelect").selectedOptions[0].textContent=name.trim();};
-$("#deleteBank").onclick=async()=>{if(banks.length<=1)return alert("Debe existir al menos un banco.");if(!confirm("¿Eliminar este banco de preguntas?"))return;await deleteDoc(bankRef(currentBankId));await loadBanks();};
-$("#exportBank").onclick=()=>{const esc=v=>'"'+String(v).replaceAll('"','""')+'"';const csv=["Pregunta,Opción A,Opción B,Opción C,Opción D,Correcta",...Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].map(esc).join(","))].join("\n");const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(banks.find(x=>x.id===currentBankId)?.name||"preguntas")+".csv";a.click();URL.revokeObjectURL(a.href);};
-$("#toggleEditor").onclick=()=>{
-  const ed=$("#questionEditor");
+$("renameBank").onclick=async()=>{const b=banks.find(x=>x.id===currentBankId);const name=prompt("Nuevo nombre:",b?.name||currentBankId);if(!name?.trim())return;await setDoc(bankRef(currentBankId),{name:name.trim(),updatedAt:serverTimestamp()},{merge:true});if(b)b.name=name.trim();$("bankSelect").selectedOptions[0].textContent=name.trim();};
+$("deleteBank").onclick=async()=>{if(banks.length<=1)return alert("Debe existir al menos un banco.");if(!confirm("¿Eliminar este banco de preguntas?"))return;await deleteDoc(bankRef(currentBankId));await loadBanks();};
+$("exportBank").onclick=()=>{const esc=v=>'"'+String(v).replaceAll('"','""')+'"';const csv=["Pregunta,Opción A,Opción B,Opción C,Opción D,Correcta",...Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].map(esc).join(","))].join("\n");const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(banks.find(x=>x.id===currentBankId)?.name||"preguntas")+".csv";a.click();URL.revokeObjectURL(a.href);};
+$("toggleEditor").onclick=()=>{
+  const ed=$("questionEditor");
   ed.open=!ed.open;
-  if(ed.open && !$("#bulkQuestions").value.trim()){
-    $("#bulkQuestions").value=Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].join("\t")).join("\n");
+  if(ed.open && !$("bulkQuestions").value.trim()){
+    $("bulkQuestions").value=Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].join("\t")).join("\n");
   }
 };
-$("#loadCurrent").onclick=()=>{
-  $("#bulkQuestions").value=Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].join("\t")).join("\n");
-  $("#editorMsg").textContent=`${Q.length} preguntas cargadas para editar.`;
+$("loadCurrent").onclick=()=>{
+  $("bulkQuestions").value=Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].join("\t")).join("\n");
+  $("editorMsg").textContent=`${Q.length} preguntas cargadas para editar.`;
 };
-$("#chooseQuestionFile").onclick=()=>$("#questionFile").click();
-$("#questionFile").onchange=async e=>{
+$("chooseQuestionFile").onclick=()=>$("questionFile").click();
+$("questionFile").onchange=async e=>{
   const f=e.target.files?.[0]; if(!f)return;
   try{
     const text=await f.text();
@@ -418,16 +418,16 @@ $("#questionFile").onchange=async e=>{
       const data=hasHeader?rows.slice(1):rows;
       normalized=data.map(r=>r.slice(0,6).join("\t")).join("\n");
     }
-    $("#bulkQuestions").value=normalized;
-    $("#editorMsg").textContent=`Archivo ${f.name} cargado. Pulsa “Guardar cambios” para importarlo a Firebase.`;
-  }catch(err){$("#editorMsg").textContent="ERROR al leer archivo: "+(err?.message||err);}
+    $("bulkQuestions").value=normalized;
+    $("editorMsg").textContent=`Archivo ${f.name} cargado. Pulsa “Guardar cambios” para importarlo a Firebase.`;
+  }catch(err){$("editorMsg").textContent="ERROR al leer archivo: "+(err?.message||err);}
 };
 
-$("#saveQuestions").onclick=async()=>{
-  const msg=$("#editorMsg");
+$("saveQuestions").onclick=async()=>{
+  const msg=$("editorMsg");
   try{
     msg.textContent="Validando y guardando...";
-    const raw=$("#bulkQuestions").value.replace(/\r/g,"").trim();
+    const raw=$("bulkQuestions").value.replace(/\r/g,"").trim();
     if(!raw) throw new Error("El cuadro está vacío.");
 
     const lines=raw.split("\n").map(x=>x.trim()).filter(Boolean);
