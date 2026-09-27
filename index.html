@@ -52,7 +52,7 @@ textarea{resize:vertical}.adminGrid{display:grid;grid-template-columns:1fr auto;
 <div class="big" id="waitScore">0 pts</div>
 <div id="playerRankingBox" class="card hidden" style="margin-top:18px;text-align:left">
 <h3>🏆 Ranking</h3><div id="playerRanking"></div>
-</div><div id="playerRankingBox" class="card hidden" style="margin-top:18px;text-align:left"><h3>🏆 Ranking</h3><div id="playerRanking"></div></div>
+</div>
 </section>
 
 <section id="playerGame" class="hidden">
@@ -99,6 +99,10 @@ textarea{resize:vertical}.adminGrid{display:grid;grid-template-columns:1fr auto;
 
   <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
   <h3>Importación masiva</h3>
+<div class="row" style="margin-bottom:10px">
+  <button id="chooseQuestionFile" class="secondary" type="button">📂 Importar archivo CSV / TSV / TXT</button>
+  <input id="questionFile" type="file" accept=".csv,.tsv,.txt" class="hidden">
+</div>
 <textarea id="bulkQuestions" style="width:100%;min-height:280px;padding:12px;border:1px solid var(--line);border-radius:12px;font:inherit" placeholder="Pregunta 1[TAB]Opción A[TAB]Opción B[TAB]Opción C[TAB]Opción D[TAB]B"></textarea>
   <div class="row" style="margin-top:10px">
     <button id="loadCurrent" class="secondary" type="button">Cargar preguntas actuales</button>
@@ -162,7 +166,21 @@ const roomRef=()=>doc(db,ROOT,room); const playersRef=()=>collection(db,ROOT,roo
 function safeId(s){return (s.toLowerCase().replace(/[^a-z0-9áéíóúñ]+/gi,"-").replace(/^-|-$/g,"").slice(0,40)||"jugador")+"-"+Math.random().toString(36).slice(2,7)}
 async function ensureRoom(){const r=await getDoc(roomRef());if(!r.exists())await setDoc(roomRef(),{questionIndex:0,status:"lobby",openedAt:0,duration:60,bankId:currentBankId,updatedAt:serverTimestamp()})}
 $("joinBtn").onclick=async()=>{playerName=$("playerName").value.trim();room=$("roomCode").value.trim().toUpperCase()||DEFAULT_ROOM;if(!playerName)return $("joinMsg").textContent="Escribe tu nombre.";try{await ensureRoom();playerId=safeId(playerName);await setDoc(pRef(playerId),{name:playerName,score:0,correctTime:0,answers:{},joinedAt:serverTimestamp()});$("welcome").textContent="¡Listo, "+playerName+"!";show("waiting");listenPlayer()}catch(e){$("joinMsg").textContent="No fue posible entrar. Revisa las reglas de Firestore."}}
-$("hostBtn").onclick=async()=>{if($("hostPass").value!==HOST_PASSWORD)return $("hostMsg").textContent="Clave incorrecta.";room=DEFAULT_ROOM;await ensureRoom();$("hostRoom").textContent=room;show("hostPanel");listenHost();loadBanks()}
+$("hostBtn").onclick=async()=>{
+  if($("hostPass").value!==HOST_PASSWORD)return $("hostMsg").textContent="Clave incorrecta.";
+  try{
+    room=DEFAULT_ROOM;
+    await ensureRoom();
+    $("hostRoom").textContent=room;
+    show("hostPanel");
+    listenHost();
+    await loadBanks();
+  }catch(e){
+    console.error(e);
+    show("hostLogin");
+    $("hostMsg").textContent="Firebase rechazó el acceso: "+(e?.message||e);
+  }
+}
 function points(elapsed){return Math.max(1,10-Math.floor(Math.min(59.999,elapsed)/6))}
 function listenPlayer(){
   if(playerUnsub)playerUnsub();
@@ -170,7 +188,7 @@ function listenPlayer(){
   unsubRoom=onSnapshot(roomRef(),snap=>{
     if(!snap.exists())return;
     state=snap.data();
-    if(Array.isArray(state.questions)&&state.questions.length)Q=state.questions;
+    if(Array.isArray(state.questions)&&state.questions.length)Q=questionsFromFirestore(state.questions);
     if(state.status==="open"){
       $("playerRankingBox").classList.add("hidden");
       renderPlayer();
@@ -207,8 +225,8 @@ async function submitAnswer(k,b){
   await updateDoc(pRef(playerId),{answers:ans});
   $("pMsg").textContent="Respuesta registrada. Espera a que el facilitador continúe.";
 }
-function listenHost(){hostUnsubs.forEach(u=>u());hostUnsubs=[onSnapshot(roomRef(),s=>{if(s.exists()){state=s.data();if(Array.isArray(state.questions)&&state.questions.length)Q=state.questions;renderHost()}}),onSnapshot(playersRef(),s=>{players=s.docs.map(d=>({id:d.id,...d.data()}));renderHost()})]}
-function renderHost(){if(!state)return;let i=Math.min(state.questionIndex,Q.length-1),q=Q[i];$("connected").textContent=players.length;$("answered").textContent=players.filter(p=>p.answers&&p.answers[i]!=null).length;$("hNum").textContent=`Pregunta ${i+1} / ${Q.length}`;$("hQuestion").textContent=q[1];$("hOptions").innerHTML=q[2].map((x,k)=>`<div class="${state.status==="revealed"&&k===q[3]?"correct":""}" style="padding:8px;border-radius:8px">${String.fromCharCode(65+k)}. ${x}</div>`).join("");const labels={lobby:"En espera",open:"Pregunta abierta",closed:"Respuestas cerradas",revealed:"Respuesta revelada"};$("phaseLabel").textContent=labels[state.status]||state.status;$("openQ").disabled=state.status==="open";$("closeQ").disabled=state.status!=="open";$("revealQ").disabled=state.status==="open"||state.status==="lobby";$("nextQ").disabled=state.status!=="revealed"||i>=Q.length-1;renderDist(i);renderRank();runHostTimer()}
+function listenHost(){hostUnsubs.forEach(u=>u());hostUnsubs=[onSnapshot(roomRef(),s=>{if(s.exists()){state=s.data();if(Array.isArray(state.questions)&&state.questions.length)Q=questionsFromFirestore(state.questions);renderHost()}}),onSnapshot(playersRef(),s=>{players=s.docs.map(d=>({id:d.id,...d.data()}));renderHost()})]}
+function renderHost(){if(!state)return;if(!Q.length){$("connected").textContent=players.length;$("answered").textContent="0";$("hNum").textContent="Sin preguntas";$("hQuestion").textContent="Este banco está vacío. Agrega una pregunta o usa la carga masiva.";$("hOptions").innerHTML="";$("distribution").innerHTML="";$("ranking").innerHTML="";$("openQ").disabled=true;$("closeQ").disabled=true;$("revealQ").disabled=true;$("nextQ").disabled=true;return;}let i=Math.min(state.questionIndex,Q.length-1),q=Q[i];$("connected").textContent=players.length;$("answered").textContent=players.filter(p=>p.answers&&p.answers[i]!=null).length;$("hNum").textContent=`Pregunta ${i+1} / ${Q.length}`;$("hQuestion").textContent=q[1];$("hOptions").innerHTML=q[2].map((x,k)=>`<div class="${state.status==="revealed"&&k===q[3]?"correct":""}" style="padding:8px;border-radius:8px">${String.fromCharCode(65+k)}. ${x}</div>`).join("");const labels={lobby:"En espera",open:"Pregunta abierta",closed:"Respuestas cerradas",revealed:"Respuesta revelada"};$("phaseLabel").textContent=labels[state.status]||state.status;$("openQ").disabled=state.status==="open";$("closeQ").disabled=state.status!=="open";$("revealQ").disabled=state.status==="open"||state.status==="lobby";$("nextQ").disabled=state.status!=="revealed"||i>=Q.length-1;renderDist(i);renderRank();runHostTimer()}
 function renderDist(i){
   if(state.status!=="revealed"){
     $("distribution").innerHTML='<p class="muted">Los resultados se revelarán al finalizar la pregunta.</p>'; $("responseDetails").innerHTML="";
@@ -272,9 +290,19 @@ $("resetGame").onclick=async()=>{if(!confirm("¿Reiniciar toda la partida y punt
 $("clearPlayers").onclick=async()=>{if(!confirm("¿Eliminar todos los participantes?"))return;let batch=writeBatch(db);(await getDocs(playersRef())).forEach(d=>batch.delete(d.ref));await batch.commit()};
 
 const bankRef=id=>doc(db,BANKS,id);
+const questionsToFirestore=qs=>qs.map(q=>({
+  title:String(q[0]||"Pregunta"),
+  text:String(q[1]||""),
+  options:Array.isArray(q[2])?q[2].map(String):[],
+  correct:Number(q[3]||0)
+}));
+const questionsFromFirestore=qs=>(Array.isArray(qs)?qs:[]).map(q=>{
+  if(Array.isArray(q)) return q; // compatibility if data ever comes from another source
+  return [q.title||"Pregunta",q.text||"",Array.isArray(q.options)?q.options:[],Number(q.correct||0)];
+});
 async function seedDefaultBank(){
   const s=await getDoc(bankRef("agilismo"));
-  if(!s.exists()) await setDoc(bankRef("agilismo"),{name:"Agilismo",questions:Q,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  if(!s.exists()) await setDoc(bankRef("agilismo"),{name:"Agilismo",questions:questionsToFirestore(Q),createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
 }
 async function loadBanks(){
   await seedDefaultBank();
@@ -288,10 +316,10 @@ async function loadBanks(){
 async function selectBank(id,syncRoom=true){
   const s=await getDoc(bankRef(id)); if(!s.exists())return;
   currentBankId=id; const d=s.data();
-  if(Array.isArray(d.questions)&&d.questions.length)Q=d.questions;
+  if(Array.isArray(d.questions)) Q=questionsFromFirestore(d.questions);
   renderQuestionAdmin();
   $("#bulkQuestions").value=Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].join("\t")).join("\n");
-  if(syncRoom) await setDoc(roomRef(),{questions:Q,bankId:id,questionIndex:0,status:"lobby",openedAt:0,updatedAt:serverTimestamp()},{merge:true});
+  if(syncRoom) await setDoc(roomRef(),{questions:questionsToFirestore(Q),bankId:id,questionIndex:0,status:"lobby",openedAt:0,updatedAt:serverTimestamp()},{merge:true});
   renderHost();
 }
 function renderQuestionAdmin(){
@@ -300,9 +328,22 @@ function renderQuestionAdmin(){
 }
 async function persistBank(){
   const b=banks.find(x=>x.id===currentBankId);
-  await setDoc(bankRef(currentBankId),{name:b?.name||currentBankId,questions:Q,updatedAt:serverTimestamp()},{merge:true});
-  await setDoc(roomRef(),{questions:Q,bankId:currentBankId,questionIndex:0,status:"lobby",openedAt:0,updatedAt:serverTimestamp()},{merge:true});
-  renderQuestionAdmin(); renderHost();
+  await setDoc(bankRef(currentBankId),{
+    name:b?.name||currentBankId,
+    questions:questionsToFirestore(Q),
+    updatedAt:serverTimestamp()
+  },{merge:true});
+  await setDoc(roomRef(),{
+    questions:questionsToFirestore(Q),
+    bankId:currentBankId,
+    questionIndex:0,
+    status:"lobby",
+    openedAt:0,
+    duration:60,
+    updatedAt:serverTimestamp()
+  },{merge:true});
+  renderQuestionAdmin();
+  renderHost();
 }
 window.editQ=i=>{editingIndex=i;const q=Q[i];$("#singleEditorTitle").textContent=`Editar pregunta ${i+1}`;$("#editQuestion").value=q[1];["A","B","C","D"].forEach((x,k)=>$("#edit"+x).value=q[2][k]);$("#editCorrect").value=q[3];$("#singleEditor").classList.remove("hidden");$("#singleEditor").scrollIntoView({behavior:"smooth",block:"center"});}
 window.dupQ=async i=>{Q.splice(i+1,0,JSON.parse(JSON.stringify(Q[i])));await persistBank();}
@@ -310,9 +351,31 @@ window.delQ=async i=>{if(Q.length<=1)return alert("El banco debe conservar al me
 window.moveQ=async(i,d)=>{const j=i+d;if(j<0||j>=Q.length)return;[Q[i],Q[j]]=[Q[j],Q[i]];await persistBank();}
 $("#addQuestion").onclick=()=>{editingIndex=null;$("#singleEditorTitle").textContent="Nueva pregunta";$("#editQuestion").value="";["A","B","C","D"].forEach(x=>$("#edit"+x).value="");$("#editCorrect").value="0";$("#singleEditor").classList.remove("hidden");};
 $("#cancelSingle").onclick=()=>$("#singleEditor").classList.add("hidden");
-$("#saveSingle").onclick=async()=>{const text=$("#editQuestion").value.trim(),opts=["A","B","C","D"].map(x=>$("#edit"+x).value.trim()),correct=Number($("#editCorrect").value);if(!text||opts.some(x=>!x))return alert("Completa la pregunta y las cuatro opciones.");const q=[`Pregunta`,text,opts,correct];if(editingIndex===null)Q.push(q);else Q[editingIndex]=q;$("#singleEditor").classList.add("hidden");await persistBank();};
+$("#saveSingle").onclick=async()=>{
+  try{
+    const text=$("#editQuestion").value.trim(),opts=["A","B","C","D"].map(x=>$("#edit"+x).value.trim()),correct=Number($("#editCorrect").value);
+    if(!text||opts.some(x=>!x))return alert("Completa la pregunta y las cuatro opciones.");
+    const q=["Pregunta",text,opts,correct];
+    if(editingIndex===null)Q.push(q);else Q[editingIndex]=q;
+    $("#singleEditor").classList.add("hidden");
+    await persistBank();
+    $("#editorMsg").textContent="✓ Pregunta guardada.";
+  }catch(e){console.error(e);$("#editorMsg").textContent="Error al guardar: "+(e?.message||e);}
+};
 $("#bankSelect").onchange=e=>selectBank(e.target.value,true);
-$("#newBank").onclick=async()=>{const name=prompt("Nombre del nuevo banco:");if(!name?.trim())return;const id=name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")+"-"+Date.now().toString().slice(-5);await setDoc(bankRef(id),{name:name.trim(),questions:[],createdAt:serverTimestamp(),updatedAt:serverTimestamp()});banks.push({id,name:name.trim(),questions:[]});currentBankId=id;Q=[];$("#bankSelect").innerHTML=banks.map(b=>`<option value="${escapeHtml(b.id)}">${escapeHtml(b.name||b.id)}</option>`).join("");$("#bankSelect").value=id;renderQuestionAdmin();$("#bulkQuestions").value="";};
+$("#newBank").onclick=async()=>{
+  try{
+    const name=prompt("Nombre del nuevo banco:"); if(!name?.trim())return;
+    const id=name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")+"-"+Date.now().toString().slice(-5);
+    await setDoc(bankRef(id),{name:name.trim(),questions:[],createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+    banks.push({id,name:name.trim(),questions:[]}); currentBankId=id; Q=[];
+    $("#bankSelect").innerHTML=banks.map(b=>`<option value="${escapeHtml(b.id)}">${escapeHtml(b.name||b.id)}</option>`).join("");
+    $("#bankSelect").value=id; $("#bulkQuestions").value=""; renderQuestionAdmin();
+    await setDoc(roomRef(),{questions:[],bankId:id,questionIndex:0,status:"lobby",openedAt:0,updatedAt:serverTimestamp()},{merge:true});
+    renderHost();
+    $("#editorMsg").textContent="Banco creado. Agrega preguntas o pégalas en Importación masiva.";
+  }catch(e){console.error(e);$("#editorMsg").textContent="Error al crear banco: "+(e?.message||e);}
+};
 $("#renameBank").onclick=async()=>{const b=banks.find(x=>x.id===currentBankId);const name=prompt("Nuevo nombre:",b?.name||currentBankId);if(!name?.trim())return;await setDoc(bankRef(currentBankId),{name:name.trim(),updatedAt:serverTimestamp()},{merge:true});if(b)b.name=name.trim();$("#bankSelect").selectedOptions[0].textContent=name.trim();};
 $("#deleteBank").onclick=async()=>{if(banks.length<=1)return alert("Debe existir al menos un banco.");if(!confirm("¿Eliminar este banco de preguntas?"))return;await deleteDoc(bankRef(currentBankId));await loadBanks();};
 $("#exportBank").onclick=()=>{const esc=v=>'"'+String(v).replaceAll('"','""')+'"';const csv=["Pregunta,Opción A,Opción B,Opción C,Opción D,Correcta",...Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].map(esc).join(","))].join("\n");const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(banks.find(x=>x.id===currentBankId)?.name||"preguntas")+".csv";a.click();URL.revokeObjectURL(a.href);};
@@ -327,42 +390,88 @@ $("#loadCurrent").onclick=()=>{
   $("#bulkQuestions").value=Q.map(q=>[q[1],...q[2],String.fromCharCode(65+q[3])].join("\t")).join("\n");
   $("#editorMsg").textContent=`${Q.length} preguntas cargadas para editar.`;
 };
+$("#chooseQuestionFile").onclick=()=>$("#questionFile").click();
+$("#questionFile").onchange=async e=>{
+  const f=e.target.files?.[0]; if(!f)return;
+  try{
+    const text=await f.text();
+    let normalized=text.replace(/\r/g,"").trim();
+    const lines=normalized.split("\n").filter(Boolean);
+    if(!lines.length) throw new Error("El archivo está vacío.");
+    // CSV simple parser supporting quoted commas.
+    if(f.name.toLowerCase().endsWith(".csv")){
+      const parseCSV=line=>{
+        const out=[]; let cur="",q=false;
+        for(let i=0;i<line.length;i++){
+          const ch=line[i];
+          if(ch==='"'){
+            if(q&&line[i+1]==='"'){cur+='"';i++;}
+            else q=!q;
+          }else if(ch===","&&!q){out.push(cur);cur="";}
+          else cur+=ch;
+        }
+        out.push(cur); return out;
+      };
+      const rows=lines.map(parseCSV);
+      const first=rows[0].map(x=>x.trim().toLowerCase());
+      const hasHeader=first[0].includes("pregunta") && first.length>=6;
+      const data=hasHeader?rows.slice(1):rows;
+      normalized=data.map(r=>r.slice(0,6).join("\t")).join("\n");
+    }
+    $("#bulkQuestions").value=normalized;
+    $("#editorMsg").textContent=`Archivo ${f.name} cargado. Pulsa “Guardar cambios” para importarlo a Firebase.`;
+  }catch(err){$("#editorMsg").textContent="ERROR al leer archivo: "+(err?.message||err);}
+};
+
 $("#saveQuestions").onclick=async()=>{
   const msg=$("#editorMsg");
   try{
-    msg.textContent="Guardando...";
+    msg.textContent="Validando y guardando...";
     const raw=$("#bulkQuestions").value.replace(/\r/g,"").trim();
-    if(!raw) throw new Error("No hay preguntas para guardar.");
-    const lines=raw.split("\n").filter(x=>x.trim());
+    if(!raw) throw new Error("El cuadro está vacío.");
+
+    const lines=raw.split("\n").map(x=>x.trim()).filter(Boolean);
     const parsed=lines.map((line,idx)=>{
-      // Primary format is Excel/TSV. Semicolon is accepted as a fallback.
-      let c=line.includes("\t") ? line.split("\t") : line.split(";");
-      c=c.map(x=>x.trim());
-      if(c.length!==6) throw new Error(`Línea ${idx+1}: encontré ${c.length} columnas. Deben ser exactamente 6.`);
+      let c;
+      if(line.includes("\t")) c=line.split("\t");
+      else if(line.includes(";")) c=line.split(";");
+      else if(line.includes("|")) c=line.split("|");
+      else throw new Error(`Fila ${idx+1}: no encuentro separadores. Pega desde Excel o usa ; entre columnas.`);
+      c=c.map(x=>x.trim()).filter((x,i,a)=>!(i===0&&x==="") && !(i===a.length-1&&x===""));
+      if(c.length!==6) throw new Error(`Fila ${idx+1}: encontré ${c.length} columnas; deben ser 6: Pregunta, A, B, C, D, Correcta.`);
       const key=c[5].toUpperCase().replace(/[.)]/g,"").trim();
       const correct={A:0,B:1,C:2,D:3}[key];
-      if(!c[0]||!c[1]||!c[2]||!c[3]||!c[4]) throw new Error(`Línea ${idx+1}: hay una pregunta u opción vacía.`);
-      if(correct===undefined) throw new Error(`Línea ${idx+1}: la respuesta correcta debe ser A, B, C o D.`);
+      if(correct===undefined) throw new Error(`Fila ${idx+1}: la correcta debe ser A, B, C o D.`);
+      if(c.slice(0,5).some(x=>!x)) throw new Error(`Fila ${idx+1}: hay campos vacíos.`);
       return [`Pregunta ${idx+1}`,c[0],[c[1],c[2],c[3],c[4]],correct];
     });
-    if(parsed.length>100) throw new Error("El máximo es 100 preguntas.");
+
+    if(parsed.length>100) throw new Error("Máximo 100 preguntas.");
     Q=parsed;
+
     const active=banks.find(x=>x.id===currentBankId);
-    await setDoc(bankRef(currentBankId),{name:active?.name||currentBankId,questions:parsed,updatedAt:serverTimestamp()},{merge:true});
-    renderQuestionAdmin();
+    await setDoc(bankRef(currentBankId),{
+      name:active?.name||currentBankId,
+      questions:questionsToFirestore(Q),
+      updatedAt:serverTimestamp()
+    },{merge:true});
+
     await setDoc(roomRef(),{
-      questions:parsed,
+      questions:questionsToFirestore(Q),
+      bankId:currentBankId,
       questionIndex:0,
       status:"lobby",
       openedAt:0,
       duration:60,
       updatedAt:serverTimestamp()
     },{merge:true});
-    msg.textContent=`✓ ${parsed.length} preguntas guardadas en Firebase. La partida volvió a la pregunta 1.`;
+
+    renderQuestionAdmin();
     renderHost();
+    msg.textContent=`✓ ${Q.length} preguntas importadas y guardadas.`;
   }catch(e){
     console.error(e);
-    msg.textContent="Error: "+(e?.message||"No fue posible guardar las preguntas.");
+    msg.textContent="ERROR: "+(e?.message||String(e));
   }
 };
 
