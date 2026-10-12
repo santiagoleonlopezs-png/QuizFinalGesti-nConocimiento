@@ -65,7 +65,13 @@ textarea{resize:vertical}.adminGrid{display:grid;grid-template-columns:1fr auto;
 <div class="card">
 <div class="row between"><div><h2 style="margin-bottom:4px">Panel del facilitador</h2><span class="muted">Sala <b id="hostRoom">GC2026</b> · Estado: <b id="phaseLabel">En espera</b></span></div><div><span class="pill">Conectados: <b id="connected">0</b></span> <span class="pill">Respondieron: <b id="answered">0</b></span></div></div>
 <div class="row" style="margin-top:16px"><button id="openQ">Abrir pregunta</button><button id="closeQ" class="secondary">Cerrar respuestas</button><button id="revealQ" class="secondary">Mostrar resultados</button><button id="nextQ">Siguiente pregunta</button></div>
-<div class="row" style="margin-top:10px"><button id="resetGame" class="danger">Reiniciar partida</button><button id="clearPlayers" class="secondary">Eliminar participantes</button><button id="toggleEditor" class="secondary" type="button">Banco de preguntas ↓</button></div>
+<div id="hostError" role="alert" style="display:none;margin-top:12px;padding:12px;border-radius:10px;background:#fff1f1;color:#9a1b1b"></div><div class="row" style="margin-top:10px"><button id="resetGame" class="danger">Reiniciar partida</button><button id="clearPlayers" class="secondary">Eliminar participantes</button><button id="toggleEditor" class="secondary" type="button">Banco de preguntas ↓</button></div>
+<details id="questionPicker" class="card" style="margin-top:18px">
+<summary style="cursor:pointer;font-weight:800">🎯 Elegir preguntas y orden de presentación</summary>
+<p class="muted">Marca las preguntas que deseas utilizar. También puedes abrir una pregunta específica durante la partida sin borrar puntajes.</p>
+<div class="row"><button type="button" id="pickAll" class="secondary">Seleccionar todas</button><button type="button" id="pickNone" class="secondary">Deseleccionar todas</button><button type="button" id="applySelection">Aplicar selección</button></div>
+<div id="pickerStatus" class="muted" style="margin:10px 0"></div><div id="pickerList"></div>
+</details>
 <details id="questionEditor" class="card" style="margin-top:18px">
   <summary style="cursor:pointer;font-weight:800">Editar / reemplazar preguntas</summary>
   <p class="muted" style="margin-top:12px">Puedes cargar las preguntas actuales, editarlas y guardarlas. También puedes pegar varias desde Excel.</p>
@@ -252,8 +258,8 @@ async function submitAnswer(k,b){
   await updateDoc(pRef(playerId),{answers:ans});
   $("pMsg").textContent="Respuesta registrada. Espera a que el facilitador continúe.";
 }
-function listenHost(){hostUnsubs.forEach(u=>u());hostUnsubs=[onSnapshot(roomRef(),s=>{if(s.exists()){state=s.data();if(Array.isArray(state.questions)&&state.questions.length)Q=questionsFromFirestore(state.questions);renderHost()}}),onSnapshot(playersRef(),s=>{players=s.docs.map(d=>({id:d.id,...d.data()}));renderHost()})]}
-function renderHost(){if(!state)return;if(!Q.length){$("connected").textContent=players.length;$("answered").textContent="0";$("hNum").textContent="Sin preguntas";$("hQuestion").textContent="Este banco está vacío. Agrega una pregunta o usa la carga masiva.";$("hOptions").innerHTML="";$("distribution").innerHTML="";$("ranking").innerHTML="";$("openQ").disabled=true;$("closeQ").disabled=true;$("revealQ").disabled=true;$("nextQ").disabled=true;return;}let i=Math.min(state.questionIndex,Q.length-1),q=Q[i];$("connected").textContent=players.length;$("answered").textContent=players.filter(p=>p.answers&&p.answers[i]!=null).length;$("hNum").textContent=`Pregunta ${i+1} / ${Q.length}`;$("hQuestion").textContent=q[1];$("hOptions").innerHTML=q[2].map((x,k)=>`<div class="${state.status==="revealed"&&k===q[3]?"correct":""}" style="padding:8px;border-radius:8px">${String.fromCharCode(65+k)}. ${x}</div>`).join("");const labels={lobby:"En espera",open:"Pregunta abierta",closed:"Respuestas cerradas",revealed:"Respuesta revelada"};$("phaseLabel").textContent=labels[state.status]||state.status;$("openQ").disabled=state.status==="open";$("closeQ").disabled=state.status!=="open";$("revealQ").disabled=state.status==="open"||state.status==="lobby";$("nextQ").disabled=state.status!=="revealed"||i>=Q.length-1;renderDist(i);renderRank();runHostTimer()}
+function listenHost(){hostUnsubs.forEach(u=>u());hostUnsubs=[onSnapshot(roomRef(),s=>{if(s.exists()){state=s.data();if(Array.isArray(state.selectedQuestions))selectedQuestions=state.selectedQuestions;if(Array.isArray(state.questions)&&state.questions.length)Q=questionsFromFirestore(state.questions);renderHost()}}),onSnapshot(playersRef(),s=>{players=s.docs.map(d=>({id:d.id,...d.data()}));renderHost()})]}
+function renderHost(){if(!state)return;if(!Q.length){$("connected").textContent=players.length;$("answered").textContent="0";$("hNum").textContent="Sin preguntas";$("hQuestion").textContent="Este banco está vacío. Agrega una pregunta o usa la carga masiva.";$("hOptions").innerHTML="";$("distribution").innerHTML="";$("ranking").innerHTML="";$("openQ").disabled=true;$("closeQ").disabled=true;$("revealQ").disabled=true;$("nextQ").disabled=true;return;}let i=Math.min(state.questionIndex,Q.length-1),q=Q[i];$("connected").textContent=players.length;$("answered").textContent=players.filter(p=>p.answers&&p.answers[i]!=null).length;$("hNum").textContent=`Pregunta ${i+1} / ${Q.length}`;$("hQuestion").textContent=q[1];$("hOptions").innerHTML=q[2].map((x,k)=>`<div class="${state.status==="revealed"&&k===q[3]?"correct":""}" style="padding:8px;border-radius:8px">${String.fromCharCode(65+k)}. ${x}</div>`).join("");const labels={lobby:"En espera",open:"Pregunta abierta",closed:"Respuestas cerradas",revealed:"Respuesta revelada"};$("phaseLabel").textContent=labels[state.status]||state.status;$("openQ").disabled=state.status==="open";$("closeQ").disabled=state.status!=="open";$("revealQ").disabled=state.status==="open"||state.status==="lobby";$("nextQ").disabled=state.status!=="revealed"||selectedIndices().length<2;renderDist(i);renderRank();renderPicker();runHostTimer()}
 function renderDist(i){
   if(state.status!=="revealed"){
     $("distribution").innerHTML='<p class="muted">Los resultados se revelarán al finalizar la pregunta.</p>'; $("responseDetails").innerHTML="";
@@ -290,36 +296,65 @@ function renderRank(){
 function runHostTimer(){clearInterval(tick);if(state.status!=="open"){$("hTimer").textContent=state.status==="lobby"?"60":"—";return}const f=()=>{let r=Math.max(0,60-(Date.now()-state.openedAt)/1000);$("hTimer").textContent=Math.ceil(r);if(r<=0)clearInterval(tick)};f();tick=setInterval(f,250)}
 $("openQ").onclick=()=>updateDoc(roomRef(),{status:"open",openedAt:Date.now(),updatedAt:serverTimestamp()});
 $("closeQ").onclick=()=>updateDoc(roomRef(),{status:"closed",updatedAt:serverTimestamp()});
+function hostFailure(e){console.error(e);const box=$("hostError");box.style.display="block";box.textContent="No se pudo completar la operación: "+(e?.message||e)+". Revisa permisos de Firestore y conexión.";}
+function hostClearError(){$("hostError").style.display="none";}
+async function commitInChunks(ops){for(let i=0;i<ops.length;i+=400){const b=writeBatch(db);ops.slice(i,i+400).forEach(fn=>fn(b));await b.commit();}}
 $("revealQ").onclick=async()=>{
-  const i=state.questionIndex;
-  const snap=await getDocs(playersRef());
-  const batch=writeBatch(db);
-  snap.docs.forEach(d=>{
-    const p=d.data(),ans={...(p.answers||{})};
-    if(ans[i]){
-      const elapsed=Math.max(0,Math.min(60,Number(ans[i].elapsed||60)));
-      const correct=ans[i].option===Q[i][3];
-      const pts=correct?Math.max(1,10-Math.floor(Math.min(59.999,elapsed)/6)):0;
-      ans[i]={...ans[i],elapsed:+elapsed.toFixed(3),correct,points:pts};
-    }
-    let score=0,correctTime=0;
-    Object.values(ans).forEach(a=>{
-      score+=Number(a.points||0);
-      if(a.correct)correctTime+=Number(a.elapsed||0);
-    });
-    batch.update(d.ref,{answers:ans,score,correctTime:+correctTime.toFixed(3)});
-  });
-  await batch.commit();
-  const scored=await getDocs(playersRef());
-  const ranking=scored.docs.map(d=>({id:d.id,...d.data()})).sort(rankComparator);
-  const rankBatch=writeBatch(db);
-  ranking.forEach((p,idx)=>rankBatch.update(pRef(p.id),{rank:idx+1}));
-  await rankBatch.commit();
-  const top=ranking.slice(0,10).map(p=>({name:p.name||"",score:Number(p.score||0)}));
-  await setDoc(scoreboardRef(),{top,total:ranking.length,questionIndex:i,updatedAt:serverTimestamp()},{merge:true});
-  await updateDoc(roomRef(),{status:"revealed",updatedAt:serverTimestamp()});
+  hostClearError();$("revealQ").disabled=true;
+  try{
+    if(!state||state.status!=="closed")throw Error("Primero debes cerrar las respuestas.");
+    const i=state.questionIndex;
+    const snap=await getDocs(playersRef());
+    const scored=snap.docs.map(d=>{
+      const p=d.data(),ans={...(p.answers||{})};
+      if(ans[i]!=null){
+        const elapsed=Math.max(0,Math.min(60,Number(ans[i].elapsed??60)));
+        const correct=Number(ans[i].option)===Number(Q[i][3]);
+        const pts=correct?Math.max(1,10-Math.floor(Math.min(59.999,elapsed)/6)):0;
+        ans[i]={...ans[i],elapsed:+elapsed.toFixed(3),correct,points:pts};
+      }
+      let score=0,correctTime=0;
+      Object.values(ans).forEach(a=>{score+=Number(a.points||0);if(a.correct)correctTime+=Number(a.elapsed||0);});
+      return {id:d.id,ref:d.ref,name:p.name||"",answers:ans,score,correctTime:+correctTime.toFixed(3)};
+    }).sort(rankComparator);
+    await commitInChunks(scored.map((p,idx)=>b=>b.update(p.ref,{answers:p.answers,score:p.score,correctTime:p.correctTime,rank:idx+1})));
+    // Publicar resultados incluso si las reglas aún no permiten la subcolección /public.
+    const top=scored.slice(0,10).map(p=>({name:p.name,score:p.score}));
+    try{await setDoc(scoreboardRef(),{top,total:scored.length,questionIndex:i,updatedAt:serverTimestamp()},{merge:true});}
+    catch(e){console.warn("Tablero público no disponible; se conservan resultados en jugadores y sala.",e);}
+    await updateDoc(roomRef(),{status:"revealed",updatedAt:serverTimestamp(),lastResults:{questionIndex:i,top,total:scored.length}});
+  }catch(e){hostFailure(e);}
+  finally{if(state)renderHost();}
 };
-$("nextQ").onclick=()=>{let n=Math.min((state?.questionIndex||0)+1,Q.length-1);updateDoc(roomRef(),{questionIndex:n,status:"lobby",openedAt:0,updatedAt:serverTimestamp()})};
+let selectedQuestions=null;
+function selectedIndices(){return selectedQuestions&&selectedQuestions.length?selectedQuestions:Q.map((_,i)=>i);}
+function renderPicker(){
+ const box=$("pickerList");if(!box||!Q.length)return;
+ const indices=selectedIndices();
+ $("pickerStatus").textContent=`${indices.length} de ${Q.length} preguntas seleccionadas · actual: ${(state?.questionIndex??0)+1}`;
+ box.innerHTML=Q.map((q,i)=>`<div class="qrow" style="display:flex;align-items:center;gap:12px;justify-content:space-between"><label style="flex:1"><input type="checkbox" class="pickCheck" value="${i}" ${indices.includes(i)?"checked":""}> <b>${i+1}.</b> ${escapeHtml(q[1])}</label><button type="button" class="secondary" onclick="window.jumpQuestion(${i})">Presentar</button></div>`).join("");
+}
+$("pickAll").onclick=()=>{document.querySelectorAll(".pickCheck").forEach(x=>x.checked=true)};
+$("pickNone").onclick=()=>{document.querySelectorAll(".pickCheck").forEach(x=>x.checked=false)};
+$("applySelection").onclick=async()=>{
+ const arr=[...document.querySelectorAll(".pickCheck:checked")].map(x=>Number(x.value));
+ if(!arr.length)return alert("Selecciona al menos una pregunta.");
+ selectedQuestions=arr;
+ try{await updateDoc(roomRef(),{selectedQuestions:arr,updatedAt:serverTimestamp()});renderPicker();}
+ catch(e){hostFailure(e);}
+};
+window.jumpQuestion=async i=>{
+ if(!confirm(`¿Presentar la pregunta ${i+1}? La pregunta actual se cerrará y los puntajes se conservarán.`))return;
+ try{hostClearError();await updateDoc(roomRef(),{questionIndex:i,status:"lobby",openedAt:0,updatedAt:serverTimestamp()});}
+ catch(e){hostFailure(e);}
+};
+$("nextQ").onclick=async()=>{
+ const available=selectedIndices();const current=state?.questionIndex??0;
+ const next=available.find(i=>i>current)??available.find(i=>i!==current);
+ if(next==null)return;
+ try{hostClearError();await updateDoc(roomRef(),{questionIndex:next,status:"lobby",openedAt:0,updatedAt:serverTimestamp()});}
+ catch(e){hostFailure(e);}
+};
 $("resetGame").onclick=async()=>{if(!confirm("¿Reiniciar toda la partida y puntajes?"))return;let batch=writeBatch(db);(await getDocs(playersRef())).forEach(d=>batch.update(d.ref,{score:0,correctTime:0,answers:{}}));batch.set(roomRef(),{questionIndex:0,status:"lobby",openedAt:0,duration:60,updatedAt:serverTimestamp()});await batch.commit()};
 $("clearPlayers").onclick=async()=>{if(!confirm("¿Eliminar todos los participantes?"))return;let batch=writeBatch(db);(await getDocs(playersRef())).forEach(d=>batch.delete(d.ref));await batch.commit()};
 
