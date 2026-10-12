@@ -379,15 +379,15 @@ async function persistBank(){
   renderQuestionAdmin();
   renderHost();
 }
-window.editQ=i=>{editingIndex=i;const q=Q[i];$("singleEditorTitle").textContent=`Editar pregunta ${i+1}`;$("editQuestion").value=q[1];["A","B","C","D"].forEach((x,k)=>$("#edit"+x).value=q[2][k]);$("editCorrect").value=q[3];$("singleEditor").classList.remove("hidden");$("singleEditor").scrollIntoView({behavior:"smooth",block:"center"});}
+window.editQ=i=>{editingIndex=i;const q=Q[i];$("singleEditorTitle").textContent=`Editar pregunta ${i+1}`;$("editQuestion").value=q[1];["A","B","C","D"].forEach((x,k)=>$("edit"+x).value=q[2][k]);$("editCorrect").value=q[3];$("singleEditor").classList.remove("hidden");$("singleEditor").scrollIntoView({behavior:"smooth",block:"center"});}
 window.dupQ=async i=>{Q.splice(i+1,0,JSON.parse(JSON.stringify(Q[i])));await persistBank();}
 window.delQ=async i=>{if(Q.length<=1)return alert("El banco debe conservar al menos una pregunta.");if(confirm("¿Eliminar esta pregunta?")){Q.splice(i,1);await persistBank();}}
 window.moveQ=async(i,d)=>{const j=i+d;if(j<0||j>=Q.length)return;[Q[i],Q[j]]=[Q[j],Q[i]];await persistBank();}
-$("addQuestion").onclick=()=>{editingIndex=null;$("singleEditorTitle").textContent="Nueva pregunta";$("editQuestion").value="";["A","B","C","D"].forEach(x=>$("#edit"+x).value="");$("editCorrect").value="0";$("singleEditor").classList.remove("hidden");};
+$("addQuestion").onclick=()=>{editingIndex=null;$("singleEditorTitle").textContent="Nueva pregunta";$("editQuestion").value="";["A","B","C","D"].forEach(x=>$("edit"+x).value="");$("editCorrect").value="0";$("singleEditor").classList.remove("hidden");};
 $("cancelSingle").onclick=()=>$("singleEditor").classList.add("hidden");
 $("saveSingle").onclick=async()=>{
   try{
-    const text=$("editQuestion").value.trim(),opts=["A","B","C","D"].map(x=>$("#edit"+x).value.trim()),correct=Number($("editCorrect").value);
+    const text=$("editQuestion").value.trim(),opts=["A","B","C","D"].map(x=>$("edit"+x).value.trim()),correct=Number($("editCorrect").value);
     if(!text||opts.some(x=>!x))return alert("Completa la pregunta y las cuatro opciones.");
     const q=["Pregunta",text,opts,correct];
     if(editingIndex===null)Q.push(q);else Q[editingIndex]=q;
