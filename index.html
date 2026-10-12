@@ -49,7 +49,7 @@ textarea{resize:vertical}.adminGrid{display:grid;grid-template-columns:1fr auto;
 
 <section id="waiting" class="card hidden">
 <h2 id="welcome">¡Listo!</h2><p id="waitText">Espera a que el facilitador abra la pregunta.</p>
-<div class="big" id="waitScore">0 pts</div>
+<div class="big" id="waitScore">0 pts</div><div id="connStatus" class="muted">🟢 Conectado</div>
 <div id="playerRankingBox" class="card hidden" style="margin-top:18px;text-align:left">
 <h3>🏆 Ranking</h3><div id="playerRanking"></div>
 </div>
@@ -162,10 +162,30 @@ function show(id){screens.forEach(x=>$(x).classList.toggle("hidden",x!==id))}
 document.querySelectorAll(".back").forEach(b=>b.onclick=()=>show("home"));
 $("goPlayer").onclick=()=>show("playerJoin"); $("goHost").onclick=()=>show("hostLogin");
 let room=DEFAULT_ROOM, playerId="", playerName="", hostUnsubs=[], playerUnsub=null, tick=null, state=null, players=[];
-const roomRef=()=>doc(db,ROOT,room); const playersRef=()=>collection(db,ROOT,room,"players"); const pRef=id=>doc(db,ROOT,room,"players",id);
+const SESSION_KEY="gc_quiz_session_v4";
+const normalizeName=s=>String(s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ");
+const saveSession=()=>localStorage.setItem(SESSION_KEY,JSON.stringify({room,playerId,playerName}));
+const loadSession=()=>{try{return JSON.parse(localStorage.getItem(SESSION_KEY)||"null")}catch{return null}};
+async function touchPresence(online=true){if(!room||!playerId)return;try{await updateDoc(pRef(playerId),{online,lastSeen:serverTimestamp()})}catch{}}
+async function restoreSession(s){
+ if(!s?.room||!s?.playerId)return false; room=s.room;playerId=s.playerId;playerName=s.playerName||"";
+ const ps=await getDoc(pRef(playerId));if(!ps.exists())return false;playerName=ps.data().name||playerName;saveSession();
+ $("welcome").textContent="¡Bienvenido de nuevo, "+playerName+"!";show("waiting");await touchPresence(true);listenPlayer();return true;
+}
+async function recoverOrJoin(name,code){
+ room=String(code||DEFAULT_ROOM).trim().toUpperCase();playerName=String(name||"").trim();
+ if(!playerName)return $("joinMsg").textContent="Escribe tu nombre.";
+ await ensureRoom();const target=normalizeName(playerName),snap=await getDocs(playersRef());
+ const existing=snap.docs.find(d=>normalizeName(d.data().name)===target);
+ if(existing){playerId=existing.id;playerName=existing.data().name||playerName;saveSession();$("welcome").textContent="Sesión recuperada: "+playerName+" · "+(existing.data().score||0)+" pts";show("waiting");await touchPresence(true);listenPlayer();return;}
+ const ref=doc(playersRef());playerId=ref.id;await setDoc(ref,{name:playerName,normalizedName:target,score:0,correctTime:0,rank:null,answers:{},online:true,lastSeen:serverTimestamp(),joinedAt:serverTimestamp()});
+ saveSession();$("welcome").textContent="¡Listo, "+playerName+"!";show("waiting");listenPlayer();
+}
+
+const roomRef=()=>doc(db,ROOT,room); const playersRef=()=>collection(db,ROOT,room,"players"); const pRef=id=>doc(db,ROOT,room,"players",id); const scoreboardRef=()=>doc(db,ROOT,room,"public","scoreboard");
 function safeId(s){return (s.toLowerCase().replace(/[^a-z0-9áéíóúñ]+/gi,"-").replace(/^-|-$/g,"").slice(0,40)||"jugador")+"-"+Math.random().toString(36).slice(2,7)}
 async function ensureRoom(){const r=await getDoc(roomRef());if(!r.exists())await setDoc(roomRef(),{questionIndex:0,status:"lobby",openedAt:0,duration:60,bankId:currentBankId,updatedAt:serverTimestamp()})}
-$("joinBtn").onclick=async()=>{playerName=$("playerName").value.trim();room=$("roomCode").value.trim().toUpperCase()||DEFAULT_ROOM;if(!playerName)return $("joinMsg").textContent="Escribe tu nombre.";try{await ensureRoom();playerId=safeId(playerName);await setDoc(pRef(playerId),{name:playerName,score:0,correctTime:0,answers:{},joinedAt:serverTimestamp()});$("welcome").textContent="¡Listo, "+playerName+"!";show("waiting");listenPlayer()}catch(e){$("joinMsg").textContent="No fue posible entrar. Revisa las reglas de Firestore."}}
+$("joinBtn").onclick=async()=>{try{await recoverOrJoin($("playerName").value,$("roomCode").value)}catch(e){console.error(e);$("joinMsg").textContent="No fue posible entrar o recuperar la sesión.";}};
 $("hostBtn").onclick=async()=>{
   if($("hostPass").value!==HOST_PASSWORD)return $("hostMsg").textContent="Clave incorrecta.";
   try{
@@ -182,14 +202,19 @@ $("hostBtn").onclick=async()=>{
   }
 }
 function points(elapsed){return Math.max(1,10-Math.floor(Math.min(59.999,elapsed)/6))}
+window.addEventListener("online",async()=>{if($("connStatus"))$("connStatus").textContent="🟢 Conectado";await touchPresence(true);});
+window.addEventListener("offline",()=>{if($("connStatus"))$("connStatus").textContent="🔴 Sin conexión";});
+window.addEventListener("pagehide",()=>{touchPresence(false);});
 function listenPlayer(){
   if(playerUnsub)playerUnsub();
-  let unsubRoom=null,unsubPlayers=null;
+  let unsubRoom=null,unsubScore=null;
   unsubRoom=onSnapshot(roomRef(),snap=>{
     if(!snap.exists())return;
     state=snap.data();
     if(Array.isArray(state.questions)&&state.questions.length)Q=questionsFromFirestore(state.questions);
+    if($("connStatus"))$("connStatus").textContent=navigator.onLine?"🟢 Conectado":"🔴 Sin conexión";
     if(state.status==="open"){
+      if(unsubScore){unsubScore();unsubScore=null;}
       $("playerRankingBox").classList.add("hidden");
       renderPlayer();
     }else{
@@ -198,20 +223,22 @@ function listenPlayer(){
       getDoc(pRef(playerId)).then(x=>{if(x.exists())$("waitScore").textContent=(x.data().score||0)+" pts"});
       if(state.status==="revealed"){
         $("playerRankingBox").classList.remove("hidden");
-        if(unsubPlayers)unsubPlayers();
-        unsubPlayers=onSnapshot(playersRef(),s=>{
-          let a=s.docs.map(d=>d.data()).sort(rankComparator);
-          const isFinal=(state.questionIndex||0)===Q.length-1;
-          const visible=isFinal?a:a.slice(0,10);
-          $("playerRanking").innerHTML=visible.map((p,i)=>`<div class="rankrow"><b>${i===0?"🥇":i===1?"🥈":i===2?"🥉":"#"+(i+1)}</b><span>${escapeHtml(p.name)}</span><b>${p.score||0} pts</b></div>`).join("");
+        if(unsubScore)unsubScore();
+        unsubScore=onSnapshot(scoreboardRef(),async s=>{
+          const d=s.exists()?s.data():{},top=Array.isArray(d.top)?d.top:[];
+          let mine=null;
+          try{const me=await getDoc(pRef(playerId));if(me.exists())mine=me.data();}catch{}
+          $("playerRanking").innerHTML=
+            top.map((p,i)=>`<div class="rankrow"><b>${i===0?"🥇":i===1?"🥈":i===2?"🥉":"#"+(i+1)}</b><span>${escapeHtml(p.name)}</span><b>${p.score||0} pts</b></div>`).join("")+
+            (mine?`<div class="rankrow" style="margin-top:10px"><b>Tu posición</b><span>${escapeHtml(mine.name||playerName)}</span><b>${mine.rank||"—"} de ${d.total||"—"} · ${mine.score||0} pts</b></div>`:"");
         });
       }else{
         $("playerRankingBox").classList.add("hidden");
-        if(unsubPlayers){unsubPlayers();unsubPlayers=null;}
+        if(unsubScore){unsubScore();unsubScore=null;}
       }
     }
   });
-  playerUnsub=()=>{if(unsubRoom)unsubRoom();if(unsubPlayers)unsubPlayers();};
+  playerUnsub=()=>{if(unsubRoom)unsubRoom();if(unsubScore)unsubScore();};
 }
 function renderPlayer(){let i=state.questionIndex,q=Q[i];show("playerGame");$("pNum").textContent=`Pregunta ${i+1} / ${Q.length}`;$("pQuestion").textContent=q[1];$("pAnswers").innerHTML="";q[2].forEach((a,k)=>{let b=document.createElement("button");b.className="answer";b.textContent=String.fromCharCode(65+k)+". "+a;b.onclick=()=>submitAnswer(k,b);$("pAnswers").appendChild(b)});runPlayerTimer()}
 function runPlayerTimer(){clearInterval(tick);const update=()=>{let remain=Math.max(0,60-(Date.now()-(state.openedAt||Date.now()))/1000);$("pTimer").textContent=Math.ceil(remain);$("pTimeBar").style.width=(remain/60*100)+"%";if(remain<=0){clearInterval(tick);$("pAnswers").querySelectorAll("button").forEach(b=>b.disabled=true);$("pMsg").textContent="Tiempo agotado."}};update();tick=setInterval(update,250)}
@@ -283,6 +310,13 @@ $("revealQ").onclick=async()=>{
     batch.update(d.ref,{answers:ans,score,correctTime:+correctTime.toFixed(3)});
   });
   await batch.commit();
+  const scored=await getDocs(playersRef());
+  const ranking=scored.docs.map(d=>({id:d.id,...d.data()})).sort(rankComparator);
+  const rankBatch=writeBatch(db);
+  ranking.forEach((p,idx)=>rankBatch.update(pRef(p.id),{rank:idx+1}));
+  await rankBatch.commit();
+  const top=ranking.slice(0,10).map(p=>({name:p.name||"",score:Number(p.score||0)}));
+  await setDoc(scoreboardRef(),{top,total:ranking.length,questionIndex:i,updatedAt:serverTimestamp()},{merge:true});
   await updateDoc(roomRef(),{status:"revealed",updatedAt:serverTimestamp()});
 };
 $("nextQ").onclick=()=>{let n=Math.min((state?.questionIndex||0)+1,Q.length-1);updateDoc(roomRef(),{questionIndex:n,status:"lobby",openedAt:0,updatedAt:serverTimestamp()})};
@@ -476,5 +510,6 @@ $("saveQuestions").onclick=async()=>{
 };
 
 function escapeHtml(s){let d=document.createElement("div");d.textContent=s||"";return d.innerHTML}
+setTimeout(async()=>{const s=loadSession();if(s){try{await restoreSession(s)}catch(e){console.warn(e)}}},0);
 </script>
 </body></html>
